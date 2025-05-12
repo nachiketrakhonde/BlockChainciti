@@ -1,4 +1,5 @@
-import React from 'react';
+//import React from 'react';
+
 import Header from './components/Header';
 import Hero from './components/Hero';
 import SolutionsSection from './components/SolutionsSection';
@@ -13,6 +14,7 @@ import './styles/animations.css';
 function App() {
   return (
     <div className="min-h-screen bg-white">
+     
       <Header />
       <Hero />
       <SolutionsSection />

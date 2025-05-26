@@ -51,6 +51,8 @@ const PaymentForm: React.FC = () => {
       } catch (error) {
         console.error('Error initializing Web3:', error);
       }
+    } else {
+      console.warn('MetaMask not detected');
     }
   };
 
@@ -59,7 +61,7 @@ const PaymentForm: React.FC = () => {
       const { data, error } = await supabase
         .from('crypto_wallets')
         .select('*')
-        .eq('user_id', user!.id);
+        .eq('user_id', user?.id || '');
 
       if (error) throw error;
       setWallets(data || []);
@@ -74,7 +76,7 @@ const PaymentForm: React.FC = () => {
       const { data, error } = await supabase
         .from('transactions')
         .select('*')
-        .or(`sender_id.eq.${user!.id},receiver_id.eq.${user!.id}`)
+        .or(`sender_id.eq.${user?.id},receiver_id.eq.${user?.id}`)
         .order('created_at', { ascending: false })
         .limit(5);
 
@@ -118,6 +120,7 @@ const PaymentForm: React.FC = () => {
     if (error || !data) {
       throw new Error('Recipient not found. Please check the email address.');
     }
+
     return data;
   };
 
@@ -125,7 +128,7 @@ const PaymentForm: React.FC = () => {
     const { data, error } = await supabase
       .from('transactions')
       .insert({
-        sender_id: user!.id,
+        sender_id: user?.id,
         receiver_id: receiverId,
         amount: formData.amount,
         currency: formData.currency,
@@ -139,52 +142,20 @@ const PaymentForm: React.FC = () => {
     return data;
   };
 
-  const updateTransactionStatus = async (transactionId: string, status: string, txHash?: string) => {
+  const updateTransactionStatus = async (transactionId: string, status?: string, txHash?: string) => {
+    const updateFields: { [key: string]: any } = {};
+    if (status) updateFields.status = status;
+    if (txHash) updateFields.transaction_hash = txHash;
+    updateFields.updated_at = new Date().toISOString();
+
+    if (Object.keys(updateFields).length === 1) return; // Only updated_at was added
+
     const { error } = await supabase
       .from('transactions')
-      .update({ 
-        status, 
-        transaction_hash: txHash,
-        updated_at: new Date().toISOString()
-      })
+      .update(updateFields)
       .eq('id', transactionId);
 
     if (error) throw error;
-  };
-
-  const processBlockchainTransaction = async (receiverWalletAddress: string): Promise<string> => {
-    if (!web3) {
-      throw new Error('Web3 not initialized. Please install MetaMask.');
-    }
-
-    try {
-      // Request account access
-      await (window as any).ethereum.request({ method: 'eth_requestAccounts' });
-      
-      const accounts = await web3.eth.getAccounts();
-      if (accounts.length === 0) {
-        throw new Error('No accounts available. Please connect your wallet.');
-      }
-
-      const fromAddress = accounts[0];
-      const amount = web3.utils.toWei(formData.amount, 'ether');
-
-      // Send transaction
-      const transaction = await web3.eth.sendTransaction({
-        from: fromAddress,
-        to: receiverWalletAddress,
-        value: amount,
-        gas: 21000,
-      });
-
-      return transaction.transactionHash;
-    } catch (error: any) {
-      console.error('Blockchain transaction error:', error);
-      if (error.code === 4001) {
-        throw new Error('Transaction rejected by user');
-      }
-      throw new Error(`Transaction failed: ${error.message}`);
-    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -200,51 +171,36 @@ const PaymentForm: React.FC = () => {
     let transactionRecord: Transaction | null = null;
 
     try {
-      // Find receiver
       const receiver = await findReceiverByEmail(formData.receiverEmail);
-      
-      // Create initial transaction record
       transactionRecord = await createTransactionRecord(receiver.id);
-      
-      // For demo purposes, simulate payment processing
-      // In production, you would:
-      // 1. Get receiver's wallet address for the selected currency
-      // 2. Process actual blockchain transaction
-      // 3. Update transaction status based on result
-      
-      // Simulated processing delay
-      await new Promise(resolve => setTimeout(resolve, 3000));
-      
-      // Simulate random success/failure for demo
-      const isSuccess = Math.random() > 0.2; // 80% success rate
-      
+
+      await new Promise(resolve => setTimeout(resolve, 3000)); // Simulated delay
+
+      const isSuccess = Math.random() > 0.2;
+
       if (isSuccess) {
-        // Simulate successful transaction
-        const mockTxHash = `0x${Math.random().toString(16).substr(2, 64)}`;
-        await updateTransactionStatus(transactionRecord.id, 'completed', mockTxHash);
-        
+        const mockTxHash = `0x${Math.random().toString(16).substring(2, 66)}`;
+        if (transactionRecord) {
+          await updateTransactionStatus(transactionRecord.id, 'completed', mockTxHash);
+        }
+
         toast.success(`Payment of ${formData.amount} ${formData.currency} sent successfully!`);
-        
-        // Reset form
         setFormData({
           receiverEmail: '',
           amount: '',
           currency: 'ETH',
           selectedWallet: '',
         });
-        
-        // Reload transactions to show the new one
-        loadTransactions();
+        await loadTransactions(); // Reload transactions after successful payment
       } else {
-        // Simulate failed transaction
-        await updateTransactionStatus(transactionRecord.id, 'failed');
+        if (transactionRecord) {
+          await updateTransactionStatus(transactionRecord.id, 'failed');
+        }
         throw new Error('Transaction failed due to network issues');
       }
 
     } catch (error: any) {
       console.error('Payment processing error:', error);
-      
-      // Update transaction status if record was created
       if (transactionRecord) {
         try {
           await updateTransactionStatus(transactionRecord.id, 'failed');
@@ -252,7 +208,6 @@ const PaymentForm: React.FC = () => {
           console.error('Failed to update transaction status:', updateError);
         }
       }
-      
       toast.error(error.message || 'Failed to process payment');
     } finally {
       setLoading(false);
@@ -270,16 +225,16 @@ const PaymentForm: React.FC = () => {
       const accounts = await web3.eth.getAccounts();
       toast.success(`Connected to wallet: ${accounts[0].substring(0, 6)}...${accounts[0].substring(38)}`);
     } catch (error) {
+      console.error('Wallet connection failed:', error);
       toast.error('Failed to connect wallet');
     }
   };
 
   return (
     <div className="max-w-4xl mx-auto p-6 space-y-8">
-      {/* Payment Form */}
       <div className="bg-white rounded-xl shadow-lg p-6">
         <h2 className="text-2xl font-bold text-gray-900 mb-6">Send Payment</h2>
-        
+
         <form onSubmit={handleSubmit} className="space-y-6">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -290,7 +245,7 @@ const PaymentForm: React.FC = () => {
               name="receiverEmail"
               value={formData.receiverEmail}
               onChange={handleInputChange}
-              className="w-full border border-gray-300 rounded-md px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="w-full border border-gray-300 rounded-md px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               placeholder="recipient@example.com"
               required
             />
@@ -307,7 +262,7 @@ const PaymentForm: React.FC = () => {
               onChange={handleInputChange}
               step="0.000001"
               min="0"
-              className="w-full border border-gray-300 rounded-md px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="w-full border border-gray-300 rounded-md px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               placeholder="0.00"
               required
             />
@@ -321,7 +276,7 @@ const PaymentForm: React.FC = () => {
               name="currency"
               value={formData.currency}
               onChange={handleInputChange}
-              className="w-full border border-gray-300 rounded-md px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="w-full border border-gray-300 rounded-md px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
               <option value="ETH">Ethereum (ETH)</option>
               <option value="USDT">Tether (USDT)</option>
@@ -330,83 +285,77 @@ const PaymentForm: React.FC = () => {
             </select>
           </div>
 
-          <div className="flex space-x-4">
+          {/* Display user's wallets */}
+          {wallets.length > 0 && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Select Wallet (Optional)
+              </label>
+              <select
+                name="selectedWallet"
+                value={formData.selectedWallet}
+                onChange={handleInputChange}
+                className="w-full border border-gray-300 rounded-md px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="">Select a wallet</option>
+                {wallets.map((wallet) => (
+                  <option key={wallet.id} value={wallet.id}>
+                    {wallet.wallet_address.substring(0, 6)}...{wallet.wallet_address.substring(38)} ({wallet.currency})
+                    {wallet.balance && ` - Balance: ${wallet.balance}`}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          <div className="flex gap-4">
             <button
               type="submit"
               disabled={loading}
-              className="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-md font-medium transition-all hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+              className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
             >
-              {loading ? (
-                <span className="flex items-center justify-center">
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                  Processing...
-                </span>
-              ) : (
-                'Send Payment'
-              )}
+              {loading ? 'Processing...' : 'Send Payment'}
             </button>
-            
-            {web3 && (
-              <button
-                type="button"
-                onClick={connectWallet}
-                className="px-6 py-3 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 transition-colors"
-              >
-                Connect Wallet
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={connectWallet}
+              className="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600 transition-colors"
+            >
+              Connect Wallet
+            </button>
           </div>
         </form>
       </div>
 
-      {/* Wallets Section */}
-      {wallets.length > 0 && (
-        <div className="bg-white rounded-xl shadow-lg p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Your Wallets</h3>
-          <div className="grid gap-4 md:grid-cols-2">
-            {wallets.map((wallet) => (
-              <div key={wallet.id} className="p-4 bg-gray-50 rounded-lg border">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <p className="text-sm font-medium text-gray-900">{wallet.currency}</p>
-                    <p className="text-xs text-gray-600 mt-1 font-mono">
-                      {wallet.wallet_address.substring(0, 8)}...{wallet.wallet_address.substring(34)}
-                    </p>
-                  </div>
-                  {wallet.balance && (
-                    <span className="text-sm font-semibold text-green-600">
-                      {wallet.balance} {wallet.currency}
-                    </span>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Recent Transactions */}
+      {/* Display recent transactions */}
       {transactions.length > 0 && (
         <div className="bg-white rounded-xl shadow-lg p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Recent Transactions</h3>
+          <h3 className="text-xl font-bold text-gray-900 mb-4">Recent Transactions</h3>
           <div className="space-y-3">
-            {transactions.map((tx) => (
-              <div key={tx.id} className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
-                <div>
-                  <p className="text-sm font-medium">
-                    {tx.sender_id === user?.id ? 'Sent' : 'Received'} {tx.amount} {tx.currency}
-                  </p>
-                  <p className="text-xs text-gray-600">
-                    {new Date(tx.created_at).toLocaleDateString()}
-                  </p>
+            {transactions.map((transaction) => (
+              <div key={transaction.id} className="border-l-4 border-blue-500 pl-4 py-2">
+                <div className="flex justify-between items-center">
+                  <div>
+                    <p className="font-medium">
+                      {transaction.sender_id === user?.id ? 'Sent' : 'Received'} {transaction.amount} {transaction.currency}
+                    </p>
+                    <p className="text-sm text-gray-600">
+                      {new Date(transaction.created_at).toLocaleDateString()}
+                    </p>
+                  </div>
+                  <span className={`px-2 py-1 rounded text-xs font-medium ${
+                    transaction.status === 'completed' ? 'bg-green-100 text-green-800' :
+                    transaction.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                    'bg-red-100 text-red-800'
+                  }`}>
+                    {transaction.status}
+                  </span>
                 </div>
-                <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                  tx.status === 'completed' ? 'bg-green-100 text-green-800' :
-                  tx.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                  'bg-red-100 text-red-800'
-                }`}>
-                  {tx.status.charAt(0).toUpperCase() + tx.status.slice(1)}
-                </span>
+                {transaction.transaction_hash && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    Hash: {transaction.transaction_hash.substring(0, 10)}...
+                  </p>
+                )}
               </div>
             ))}
           </div>

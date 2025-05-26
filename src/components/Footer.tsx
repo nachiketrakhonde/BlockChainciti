@@ -52,11 +52,11 @@ const Footer: React.FC = () => {
             <ul className="space-y-4">
               <li>
                 <p className="text-blue-200">123 Blockchain Avenue</p>
-                <p className="text-blue-200">San Francisco, CA 94103</p>
+                <p className="text-blue-200">Pune,Maharashtra</p>
               </li>
               <li>
-                <p className="text-blue-200">info@blockbank.com</p>
-                <p className="text-blue-200">+1 (555) 123-4567</p>
+                <p className="text-blue-200">infohelpdesk@blockbank.com</p>
+                <p className="text-blue-200">+020 9822347</p>
               </li>
             </ul>
             <button className="mt-6 bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-md transition-all hover:shadow-lg">

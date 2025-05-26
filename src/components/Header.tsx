@@ -1,9 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { Menu, X, Bitcoin } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
 
-const Header: React.FC = () => {
+interface HeaderProps {
+  onAuthClick: () => void;
+}
+
+const Header: React.FC<HeaderProps> = ({ onAuthClick }) => {
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const { user, signOut } = useAuth();
 
   useEffect(() => {
     const handleScroll = () => {
@@ -43,9 +49,21 @@ const Header: React.FC = () => {
               {item}
             </a>
           ))}
-          <button className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-md transition-all hover:shadow-lg">
-            Try Demo
-          </button>
+          {user ? (
+            <button
+              onClick={() => signOut()}
+              className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-md transition-all hover:shadow-lg"
+            >
+              Sign Out
+            </button>
+          ) : (
+            <button
+              onClick={onAuthClick}
+              className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-md transition-all hover:shadow-lg"
+            >
+              Sign In
+            </button>
+          )}
         </nav>
 
         {/* Mobile Menu Button */}
@@ -71,14 +89,32 @@ const Header: React.FC = () => {
                 {item}
               </a>
             ))}
-            <button className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-md transition-all hover:shadow-lg w-full">
-              Try Demo
-            </button>
+            {user ? (
+              <button
+                onClick={() => {
+                  signOut();
+                  setIsMenuOpen(false);
+                }}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-md transition-all hover:shadow-lg w-full"
+              >
+                Sign Out
+              </button>
+            ) : (
+              <button
+                onClick={() => {
+                  onAuthClick();
+                  setIsMenuOpen(false);
+                }}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-md transition-all hover:shadow-lg w-full"
+              >
+                Sign In
+              </button>
+            )}
           </div>
         </div>
       )}
     </header>
   );
-};
+}
 
 export default Header;
